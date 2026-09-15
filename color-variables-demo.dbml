@@ -1,0 +1,32 @@
+// ============================================
+// Demo de VARIABLES DE COLOR reutilizables
+// Define la paleta una vez y referénciala con $nombre
+// ============================================
+
+// @color primary #2E86DE
+// @color danger  #E74C3C
+// @color success #27AE60
+
+Table users [headercolor: $primary] {
+  id int [pk]
+  name varchar
+  email varchar
+}
+
+Table posts [headercolor: $primary] {
+  id int [pk]
+  user_id int
+  title varchar
+}
+
+Table logs [headercolor: $danger] {
+  id int [pk]
+  message text
+}
+
+TableGroup content [color: $success] {
+  users
+  posts
+}
+
+Ref: posts.user_id > users.id [color: $primary]

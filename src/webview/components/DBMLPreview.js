@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'; // eslint-disable-line no-unused-vars
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'; // eslint-disable-line no-unused-vars
 import {
   ReactFlow,
   Controls,
@@ -26,9 +26,12 @@ import TableIndexesTooltip from './TableIndexesTooltip';
 import StickyNote from './StickyNote';
 import ErrorDisplay from './ErrorDisplay';
 import TableNavigationDropdown from './TableNavigationDropdown';
+import ColorPickerPopover from './ColorPickerPopover';
+import NoteEditorPopover from './NoteEditorPopover';
+import { DiagramActionsContext } from '../diagramActionsContext.js';
 import { transformDBMLToNodes } from '../utils/dbmlTransformer';
 import { parseDBMLError, formatErrorForDisplay } from '../utils/errorParser';
-import { preprocessChecks, preprocessOptionalRelationships } from '../utils/dbmlPreprocessor';
+import { preprocessColorVariables, preprocessChecks, preprocessOptionalRelationships, extractColorPalette } from '../utils/dbmlPreprocessor';
 import {
   saveLayout,
   loadLayout,
@@ -143,14 +146,92 @@ const DBMLPreview = ({ initialContent }) => {
   const [inheritThemeStyle, setInheritThemeStyle] = useState(true);
   const [edgeType, setEdgeType] = useState('smoothstep');
   const [showCardinalityLabels, setShowCardinalityLabels] = useState(false);
+  const [backgroundVariant, setBackgroundVariant] = useState('dots');
+  const [backgroundGap, setBackgroundGap] = useState(20);
+  const [hoveredTable, setHoveredTable] = useState(null);
   const [exportQuality, setExportQuality] = useState(0.95);
   const [exportBackground, setExportBackground] = useState(true);
   const [exportPadding, setExportPadding] = useState(20);
   const [handleTableNavigation, setHandleTableNavigation] = useState(null);
   const [tableChecks, setTableChecks] = useState({});
+  const [colorPickerData, setColorPickerData] = useState(null);
+  const [noteEditorData, setNoteEditorData] = useState(null);
+
+  // Color palette declared in the DBML (`// @color name #hex`) for the picker.
+  const colorPalette = useMemo(() => extractColorPalette(dbmlContent || ''), [dbmlContent]);
+
+  // Send a diagram-driven edit back to the .dbml source (applied by the host).
+  const applySourceOps = useCallback((ops) => {
+    if (window.vscode && ops && ops.length) {
+      window.vscode.postMessage({ type: 'sourceEdit', ops });
+    }
+  }, []);
+
+  const openColorPicker = useCallback((payload) => {
+    setNoteEditorData(null);
+    setColorPickerData(payload);
+  }, []);
+  const openNoteEditor = useCallback((payload) => {
+    setColorPickerData(null);
+    setNoteEditorData(payload);
+  }, []);
+
+  // Actions provided to header nodes via context.
+  const diagramActions = useMemo(
+    () => ({ palette: colorPalette, openColorPicker, openNoteEditor }),
+    [colorPalette, openColorPicker, openNoteEditor]
+  );
 
   // Ref to the React Flow instance — used to call fitView() imperatively during bulk export
   const reactFlowRef = useRef(null);
+  // Debounce clearing the hovered table so moving between a table's header and
+  // its column rows doesn't flicker the highlight off and on.
+  const hoverClearTimer = useRef(null);
+
+  // Resolve the owning table (full name) of a hovered node, header or column.
+  const tableOfNode = (node) => {
+    if (node?.type === 'tableHeader') return node.id.replace(/^table-/, '');
+    if (node?.type === 'column' && node.parentId) return node.parentId.replace(/^table-/, '');
+    return null;
+  };
+
+  const handleNodeMouseEnter = useCallback((event, node) => {
+    const full = tableOfNode(node);
+    if (!full) return;
+    if (hoverClearTimer.current) clearTimeout(hoverClearTimer.current);
+    setHoveredTable(full);
+  }, []);
+
+  const handleNodeMouseLeave = useCallback(() => {
+    if (hoverClearTimer.current) clearTimeout(hoverClearTimer.current);
+    hoverClearTimer.current = setTimeout(() => setHoveredTable(null), 60);
+  }, []);
+
+  // Double-click a table -> reveal its declaration in the editor (diagram -> code).
+  const handleNodeDoubleClick = useCallback((event, node) => {
+    const full = tableOfNode(node);
+    if (!full) return;
+    const base = full.split('.').pop();
+    if (window.vscode) window.vscode.postMessage({ type: 'revealTable', name: base });
+  }, []);
+
+  // Highlight edges connected to the hovered table (animated, full color) and
+  // dim the rest to gray. With no hover, edges render as-is.
+  const displayEdges = useMemo(() => {
+    if (!hoveredTable) return edges;
+    return edges.map((edge) => {
+      const connected =
+        edge.data?.sourceTable === hoveredTable || edge.data?.targetTable === hoveredTable;
+      if (connected) {
+        return { ...edge, animated: true, style: { ...edge.style, strokeDasharray: '5', opacity: 1 } };
+      }
+      return {
+        ...edge,
+        animated: false,
+        style: { ...edge.style, stroke: '#9ca3af', strokeDasharray: '0', opacity: 0.2 },
+      };
+    });
+  }, [edges, hoveredTable]);
 
   // Export handlers
   const handleExportToPng = useCallback(async () => {
@@ -342,6 +423,25 @@ const DBMLPreview = ({ initialContent }) => {
     // No-op: Manual connections disabled in preview mode
   }, []);
 
+  // Handle column click for tooltip display.
+  // Defined before onNodeClick (which lists it as a dependency) so the const is
+  // initialized first — otherwise reading it in onNodeClick's deps array throws
+  // a "Cannot access 'handleColumnClick' before initialization" (TDZ) error.
+  const handleColumnClick = useCallback((column, enumDef, position) => {
+    // Close other tooltips
+    setTooltipData(null);
+    setSelectedEdgeIds(new Set());
+    setTableNoteTooltipData(null);
+    setTableIndexesTooltipData(null);
+
+    // Open column tooltip
+    setColumnTooltipData({
+      column,
+      enumDef,
+      position
+    });
+  }, []);
+
   // Node click handler for column nodes and sticky notes
   const onNodeClick = useCallback((event, node) => {
     if (node.type === 'column') {
@@ -392,22 +492,6 @@ const DBMLPreview = ({ initialContent }) => {
   const handleCloseTooltip = useCallback(() => {
     setTooltipData(null);
     setSelectedEdgeIds(new Set());
-  }, []);
-
-  // Handle column click for tooltip display
-  const handleColumnClick = useCallback((column, enumDef, position) => {
-    // Close other tooltips
-    setTooltipData(null);
-    setSelectedEdgeIds(new Set());
-    setTableNoteTooltipData(null);
-    setTableIndexesTooltipData(null);
-
-    // Open column tooltip
-    setColumnTooltipData({
-      column,
-      enumDef,
-      position
-    });
   }, []);
 
   // Handle table note click for tooltip display
@@ -477,6 +561,8 @@ const DBMLPreview = ({ initialContent }) => {
         setTableNoteTooltipData(null);
         setTableChecksTooltipData(null);
         setTableIndexesTooltipData(null);
+        setColorPickerData(null);
+        setNoteEditorData(null);
       }
     };
 
@@ -734,7 +820,8 @@ const DBMLPreview = ({ initialContent }) => {
     setEnhancedErrorInfo(null);
 
     try {
-      const contentWithoutOptionalRefs = preprocessOptionalRelationships(content);
+      const contentWithColors = preprocessColorVariables(content);
+      const contentWithoutOptionalRefs = preprocessOptionalRelationships(contentWithColors);
       const { cleanedContent, tableChecks: extracted } = preprocessChecks(contentWithoutOptionalRefs);
       setTableChecks(extracted);
       const parser = new Parser();
@@ -807,6 +894,8 @@ const DBMLPreview = ({ initialContent }) => {
     setExportQuality(initialExportQuality);
     setExportBackground(initialExportBackground);
     setExportPadding(initialExportPadding);
+    if (window.backgroundVariant !== undefined) setBackgroundVariant(window.backgroundVariant);
+    if (window.backgroundGap !== undefined) setBackgroundGap(window.backgroundGap);
 
     // Initialize theme manager
     themeManager.initialize(initialInheritThemeStyle);
@@ -843,6 +932,21 @@ const DBMLPreview = ({ initialContent }) => {
         case 'updateContent':
           setDbmlContent(message.content || '');
           break;
+        case 'focusTable': {
+          // Code -> diagram: center the view on the given table.
+          const inst = reactFlowRef.current;
+          if (inst && typeof inst.getNodes === 'function') {
+            const target = inst.getNodes().find(
+              (n) => n.type === 'tableHeader' && n.data?.table?.name === message.name
+            );
+            if (target) {
+              const w = target.data?.tableWidth || 200;
+              const h = 42 + (target.data?.columnCount || 0) * 30 + 16;
+              inst.setCenter(target.position.x + w / 2, target.position.y + h / 2, { zoom: 1.5, duration: 600 });
+            }
+          }
+          break;
+        }
         case 'configuration':
           // Handle initial configuration response
           if (message.inheritThemeStyle !== undefined) {
@@ -863,6 +967,12 @@ const DBMLPreview = ({ initialContent }) => {
           }
           if (message.exportPadding !== undefined) {
             setExportPadding(message.exportPadding);
+          }
+          if (message.backgroundVariant !== undefined) {
+            setBackgroundVariant(message.backgroundVariant);
+          }
+          if (message.backgroundGap !== undefined) {
+            setBackgroundGap(message.backgroundGap);
           }
           break;
         case 'configurationChanged':
@@ -885,6 +995,12 @@ const DBMLPreview = ({ initialContent }) => {
           }
           if (message.exportPadding !== undefined) {
             setExportPadding(message.exportPadding);
+          }
+          if (message.backgroundVariant !== undefined) {
+            setBackgroundVariant(message.backgroundVariant);
+          }
+          if (message.backgroundGap !== undefined) {
+            setBackgroundGap(message.backgroundGap);
           }
           break;
         case 'exportToPNG':
@@ -1070,14 +1186,18 @@ const DBMLPreview = ({ initialContent }) => {
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
+      <DiagramActionsContext.Provider value={diagramActions}>
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={displayEdges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onEdgeClick={onEdgeClick}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -1090,10 +1210,14 @@ const DBMLPreview = ({ initialContent }) => {
       >
         <Controls />
         <Background
-          variant={BackgroundVariant.Dots}
-          color={getThemeVar('panelBorder')}
-          size={1}
-          gap={20}
+          variant={
+            backgroundVariant === 'lines' ? BackgroundVariant.Lines
+              : backgroundVariant === 'cross' ? BackgroundVariant.Cross
+                : BackgroundVariant.Dots
+          }
+          color={backgroundVariant === 'none' ? 'transparent' : getThemeVar('panelBorder')}
+          size={backgroundVariant === 'cross' ? 6 : 1}
+          gap={backgroundGap}
           style={{
             backgroundColor: getThemeVar('background')
           }}
@@ -1240,6 +1364,28 @@ const DBMLPreview = ({ initialContent }) => {
           onClose={handleCloseTableIndexesTooltip}
         />
       )}
+
+      {colorPickerData && (
+        <ColorPickerPopover
+          position={colorPickerData.position}
+          target={{ kind: colorPickerData.kind, name: colorPickerData.name }}
+          palette={colorPalette}
+          currentVar={colorPickerData.currentVar}
+          onApply={applySourceOps}
+          onClose={() => setColorPickerData(null)}
+        />
+      )}
+
+      {noteEditorData && (
+        <NoteEditorPopover
+          position={noteEditorData.position}
+          target={{ kind: noteEditorData.kind, name: noteEditorData.name }}
+          currentNote={noteEditorData.currentNote}
+          onApply={applySourceOps}
+          onClose={() => setNoteEditorData(null)}
+        />
+      )}
+      </DiagramActionsContext.Provider>
     </div>
   );
 };

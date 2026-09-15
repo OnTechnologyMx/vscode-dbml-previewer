@@ -173,6 +173,13 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "dbml",
+        "scopeName": "source.dbml",
+        "path": "./syntaxes/dbml.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "DBML Previewer",
       "properties": {
@@ -224,6 +231,30 @@
           "type": "string",
           "default": "",
           "description": "Path to folder where bulk-exported PNG files will be saved. Relative paths resolve from workspace root. Leave empty to save into a 'dbml-exports' subfolder inside the source folder."
+        },
+        "diagram.backgroundVariant": {
+          "type": "string",
+          "default": "dots",
+          "enum": [
+            "dots",
+            "lines",
+            "cross",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Dotted grid",
+            "Line grid",
+            "Crosses",
+            "No background pattern"
+          ],
+          "description": "Background pattern drawn behind the diagram canvas."
+        },
+        "diagram.backgroundGap": {
+          "type": "number",
+          "default": 20,
+          "minimum": 8,
+          "maximum": 100,
+          "description": "Spacing in pixels between background pattern elements (dots/lines/crosses)."
         }
       }
     }

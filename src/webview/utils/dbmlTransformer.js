@@ -1,4 +1,5 @@
 import dagre from 'dagre';
+import { MarkerType } from '@xyflow/react';
 import { getThemeVar } from '../styles/themeManager.js';
 import { parseHeaderColor, darkenHexColor } from './colorUtils.js';
 
@@ -177,9 +178,12 @@ const analyzeColumnRelationships = (refs, tables, hasMultipleSchema) => {
 
       fieldNames.forEach(fieldName => {
         if (fieldName) {
+          // Merge, don't overwrite: a column can be the source of one ref and
+          // the target of another, so it needs both handle types rendered.
+          const prev = columnHandles[sourceFullTableName][fieldName] || {};
           columnHandles[sourceFullTableName][fieldName] = {
             isSource: true,
-            isTarget: false,
+            isTarget: prev.isTarget || false,
             relation: sourceEndpoint.relation
           };
         }
@@ -202,8 +206,10 @@ const analyzeColumnRelationships = (refs, tables, hasMultipleSchema) => {
 
       fieldNames.forEach(fieldName => {
         if (fieldName) {
+          // Merge, don't overwrite (see source endpoint above).
+          const prev = columnHandles[fullTableName][fieldName] || {};
           columnHandles[fullTableName][fieldName] = {
-            isSource: false,
+            isSource: prev.isSource || false,
             isTarget: true,
             relation: targetEndpoint.relation
           };
@@ -443,6 +449,14 @@ export const transformDBMLToNodes = (dbmlData, savedPositions = {}, onColumnClic
     nodes.push(stickyNoteNode);
   });
 
+  // Map each table's resolved header color (if any) so an edge can inherit the
+  // color of the table it connects — coloring a table also colors its refs.
+  const tableColorByName = {};
+  tables.forEach((t) => {
+    const c = parseHeaderColor(t.headerColor);
+    if (c) tableColorByName[t.fullName || t.name] = c;
+  });
+
   // Create edges for relationships connecting column nodes directly from DBML refs
   const edges = [];
 
@@ -482,9 +496,14 @@ export const transformDBMLToNodes = (dbmlData, savedPositions = {}, onColumnClic
           const sourceIsNullable = sourceColumn ? !sourceColumn.not_null : false;
           const targetIsNullable = targetColumn ? !targetColumn.not_null : false;
 
-          // Determine edge color from ref
-          const refColor = parseHeaderColor(ref.color);
-          const edgeStroke = refColor ? darkenHexColor(refColor) : getThemeVar('chartsLines');
+          // Determine edge color: a connected table's header color wins (child
+          // first, then parent), then an explicit ref color, else the theme line.
+          const chosenColor =
+            tableColorByName[sourceTable] ||
+            tableColorByName[targetTable] ||
+            parseHeaderColor(ref.color);
+          const refColor = chosenColor;
+          const edgeStroke = chosenColor ? darkenHexColor(chosenColor) : getThemeVar('chartsLines');
 
           edges.push({
             id: `${sourceTable}.${sourceField}-${targetTable}.${targetField}-${index}-${fieldIndex}`,
@@ -495,6 +514,15 @@ export const transformDBMLToNodes = (dbmlData, savedPositions = {}, onColumnClic
             type: 'custom',
             animated: false,
             selectable: true,
+            // Arrowhead at the source end — the source endpoint is the child
+            // (FK / many side), so the arrow shows the relationship arriving at
+            // the child. See mapSourceAndTarget: source = many side.
+            markerStart: {
+              type: MarkerType.ArrowClosed,
+              width: 18,
+              height: 18,
+              color: edgeStroke,
+            },
             style: {
               stroke: edgeStroke,
               strokeWidth: 2,
@@ -741,8 +769,11 @@ const getLayoutedElements = (nodes, edges, tableGroups = [], savedPositions = {}
           },
           selectable: true,
           draggable: true,
+          // Only start a drag from the group's title bar (see TableGroupNode),
+          // not from anywhere on the group's background area.
+          dragHandle: '.dbml-group-drag',
         };
-        
+
         tableGroupNodes.push(tableGroupNode);
       }
     });

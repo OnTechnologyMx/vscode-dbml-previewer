@@ -5,8 +5,18 @@ import { getThemeVar } from '../styles/themeManager.js';
 const ColumnNode = ({ data }) => {
   const { column, hasSourceHandle, hasTargetHandle, columnWidth = 196, enumDef, onColumnClick } = data;
 
+  // Shared connection-dot style; handles are rendered on BOTH sides so the edge
+  // can pick whichever side yields the shortest route.
+  const dotStyle = {
+    background: getThemeVar('chartsLines'),
+    border: `2px solid ${getThemeVar('editorBackground')}`,
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+  };
+
   const getColumnIcon = (column) => {
-    if (column.pk) return '🔑';
+    if (column.pk) return '';
     if (column.unique) return '⚡';
     if (column.not_null) return '❗';
     if (column.hasIndex) return '🔍';
@@ -55,21 +65,12 @@ const ColumnNode = ({ data }) => {
       title={`Click to view details for ${column.name}${enumDef ? ' (enum)' : ''}`}
       data-column-node="true"
     >
-      {/* Target Handle */}
+      {/* Target Handles — one per side, the edge chooses the nearest */}
       {hasTargetHandle && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          id="target"
-          style={{
-            left: '-4px',
-            background: getThemeVar('chartsLines'),
-            border: `2px solid ${getThemeVar('editorBackground')}`,
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%'
-          }}
-        />
+        <>
+          <Handle type="target" position={Position.Left} id="target" style={{ left: '-4px', ...dotStyle }} />
+          <Handle type="target" position={Position.Right} id="target-right" style={{ right: '-4px', ...dotStyle }} />
+        </>
       )}
 
       {/* Column Content */}
@@ -110,21 +111,12 @@ const ColumnNode = ({ data }) => {
         {getColumnType(column)}
       </span>
 
-      {/* Source Handle */}
+      {/* Source Handles — one per side, the edge chooses the nearest */}
       {hasSourceHandle && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="source"
-          style={{
-            right: '-4px',
-            background: getThemeVar('chartsLines'),
-            border: `2px solid ${getThemeVar('editorBackground')}`,
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%'
-          }}
-        />
+        <>
+          <Handle type="source" position={Position.Right} id="source" style={{ right: '-4px', ...dotStyle }} />
+          <Handle type="source" position={Position.Left} id="source-left" style={{ left: '-4px', ...dotStyle }} />
+        </>
       )}
     </div>
   );

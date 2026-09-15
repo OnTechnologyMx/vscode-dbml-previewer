@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "DBML",
+  "scopeName": "source.dbml",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#definitions" },
+    { "include": "#ref-keyword" },
+    { "include": "#strings" },
+    { "include": "#settings" },
+    { "include": "#types" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.dbml", "match": "//.*$" },
+        { "name": "comment.block.dbml", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "definitions": {
+      "patterns": [
+        {
+          "match": "\\b(Table|TableGroup|Enum|Project)\\b\\s+(\"[^\"]+\"|[\\w$.]+)?",
+          "captures": {
+            "1": { "name": "storage.type.dbml" },
+            "2": { "name": "entity.name.type.dbml" }
+          }
+        },
+        { "name": "keyword.control.dbml", "match": "\\b(Note|indexes|as)\\b" }
+      ]
+    },
+    "ref-keyword": {
+      "patterns": [
+        { "name": "keyword.control.ref.dbml", "match": "\\bRef\\b" }
+      ]
+    },
+    "settings": {
+      "patterns": [
+        {
+          "name": "support.type.property-name.dbml",
+          "match": "\\b(primary key|pk|not null|null|unique|increment|default|note|ref|headercolor|color|name)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.dbml",
+          "match": "\\b(int|integer|tinyint|smallint|mediumint|bigint|decimal|numeric|float|double|real|bit|boolean|bool|serial|bigserial|smallserial|char|varchar|nvarchar|text|tinytext|mediumtext|longtext|blob|bytea|binary|varbinary|date|datetime|timestamp|timestamptz|time|year|json|jsonb|uuid|money|geometry|geography|point|inet|cidr)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.dbml", "match": "\\b(true|false|null)\\b" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.dbml", "match": "\\b\\d+(\\.\\d+)?\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.relation.dbml", "match": "<>|[<>-]" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "name": "string.quoted.triple.dbml", "begin": "'''", "end": "'''" },
+        {
+          "name": "string.quoted.single.dbml",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "name": "constant.character.escape.dbml", "match": "\\\\." }]
+        },
+        { "name": "string.quoted.double.dbml", "begin": "\"", "end": "\"" },
+        { "name": "string.interpolated.backtick.dbml", "begin": "`", "end": "`" }
+      ]
+    }
+  }
+}

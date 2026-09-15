@@ -124,7 +124,7 @@ const ErrorDisplay = ({ errorInfo, onRetry }) => {
             >
               🔄 Try Again
             </button>
-            
+
             <button
               onClick={() => setShowDetails(!showDetails)}
               style={{
@@ -180,7 +180,7 @@ const ErrorDisplay = ({ errorInfo, onRetry }) => {
                 {showContext ? 'Hide' : 'Show'}
               </button>
             </div>
-            
+
             {showContext && (
               <div style={{
                 padding: '16px',
@@ -193,19 +193,19 @@ const ErrorDisplay = ({ errorInfo, onRetry }) => {
                 {contextLines.map((line, index) => (
                   <div key={index}>
                     <div style={{
-                      backgroundColor: line.isError 
-                        ? 'var(--vscode-inputValidation-errorBackground)' 
+                      backgroundColor: line.isError
+                        ? 'var(--vscode-inputValidation-errorBackground)'
                         : 'transparent',
                       padding: '2px 8px',
                       margin: '1px 0',
                       borderRadius: '3px',
-                      border: line.isError 
-                        ? '1px solid var(--vscode-inputValidation-errorBorder)' 
+                      border: line.isError
+                        ? '1px solid var(--vscode-inputValidation-errorBorder)'
                         : '1px solid transparent'
                     }}>
                       <span style={{
-                        color: line.isError 
-                          ? 'var(--vscode-inputValidation-errorForeground)' 
+                        color: line.isError
+                          ? 'var(--vscode-inputValidation-errorForeground)'
                           : 'var(--vscode-descriptionForeground)',
                         marginRight: '8px',
                         fontWeight: line.isError ? 'bold' : 'normal'
@@ -268,7 +268,7 @@ const ErrorDisplay = ({ errorInfo, onRetry }) => {
                 {showSuggestions ? 'Hide' : 'Show'}
               </button>
             </div>
-            
+
             {showSuggestions && (
               <div style={{ padding: '16px' }}>
                 {formattedSuggestions.map((suggestion, index) => (
@@ -297,7 +297,7 @@ const ErrorDisplay = ({ errorInfo, onRetry }) => {
                       }}>
                         {suggestion.text}
                       </p>
-                      
+
                       {suggestion.example && (
                         <div style={{
                           marginTop: '8px',
@@ -324,7 +324,7 @@ const ErrorDisplay = ({ errorInfo, onRetry }) => {
                           </pre>
                         </div>
                       )}
-                      
+
                       {suggestion.syntax && !suggestion.example && (
                         <div style={{
                           marginTop: '4px',

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { getThemeVar } from '../styles/themeManager.js';
 import { parseHeaderColor, getContrastColor } from '../utils/colorUtils.js';
+import { DiagramActionsContext } from '../diagramActionsContext.js';
+import { PaletteIcon, NoteIconButton, headerIconButtonStyle } from './HeaderIcons.js';
 
 const TableHeaderNode = ({ data }) => {
   const {
@@ -8,10 +10,11 @@ const TableHeaderNode = ({ data }) => {
     columnCount = 0,
     tableWidth = 200,
     hasMultipleSchema = false,
-    onTableNoteClick,
     onTableChecksClick,
     onTableIndexesClick,
   } = data;
+
+  const { palette, openColorPicker, openNoteEditor } = useContext(DiagramActionsContext);
   const checks = table.checks || [];
   const indexes = table.indexes || [];
 
@@ -36,6 +39,23 @@ const TableHeaderNode = ({ data }) => {
   const headerTextColor = customHeaderColor
     ? getContrastColor(customHeaderColor)
     : getThemeVar('buttonForeground');
+
+  // Match the resolved header color back to a palette variable (if any) so the
+  // color picker can show which variable is currently applied.
+  const currentVar = (palette.find(
+    (p) => (p.hex || '').toLowerCase() === (table.headerColor || '').toLowerCase()
+  ) || {}).name || null;
+
+  const handleOpenColor = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    openColorPicker({ kind: 'table', name: table.name, currentVar, position: { x: r.left, y: r.bottom + 6 } });
+  };
+  const handleOpenNote = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    openNoteEditor({ kind: 'table', name: table.name, currentNote: table.note || '', position: { x: r.left, y: r.bottom + 6 } });
+  };
 
   return (
     <div style={{
@@ -64,34 +84,18 @@ const TableHeaderNode = ({ data }) => {
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
-        <span>{title}</span>
-        {table.note && (
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0, marginLeft: '6px' }}>
+          <NoteIconButton note={table.note} color={headerTextColor} onClick={handleOpenNote} />
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onTableNoteClick) {
-                const rect = e.currentTarget.getBoundingClientRect();
-                onTableNoteClick(table, {
-                  x: rect.right + 10,
-                  y: rect.top
-                });
-              }
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: headerTextColor,
-              cursor: 'pointer',
-              fontSize: '12px',
-              padding: '2px 4px',
-              borderRadius: '2px',
-              opacity: 0.8
-            }}
-            title="View table note"
+            onClick={handleOpenColor}
+            className="nodrag"
+            style={headerIconButtonStyle(headerTextColor)}
+            title="Color del encabezado"
           >
-            📝
+            <PaletteIcon />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Column Area - Visual padding container */}

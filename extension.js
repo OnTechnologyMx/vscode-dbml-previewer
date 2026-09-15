@@ -1,6 +1,7 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const sourceEditor = require('./sourceEditor');
 
 // Track the active preview panel
 let activePreviewPanel = null;
@@ -48,6 +49,29 @@ let bulkExportOutputDir = '';
 /**
  * @param {vscode.ExtensionContext} context
  */
+/**
+ * Reveal a table's declaration in the text editor (diagram -> code).
+ * @param {string} filePath
+ * @param {string} tableName  base table name (no schema)
+ */
+async function revealTableInEditor(filePath, tableName) {
+	try {
+		const uri = vscode.Uri.file(filePath);
+		const doc = vscode.workspace.textDocuments.find(d => d.uri.fsPath === filePath)
+			|| await vscode.workspace.openTextDocument(uri);
+		const nameEsc = String(tableName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const re = new RegExp(`\\bTable\\s+(?:"[^"]*"\\.|[\\w$]+\\.)?"?${nameEsc}"?`, 'i');
+		const m = re.exec(doc.getText());
+		if (!m) return;
+		const pos = doc.positionAt(m.index);
+		const editor = await vscode.window.showTextDocument(doc, { preserveFocus: false });
+		editor.selection = new vscode.Selection(pos, pos);
+		editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+	} catch (e) {
+		console.error('revealTable failed:', e.message);
+	}
+}
+
 function activate(context) {
 
 	const previewCommand = vscode.commands.registerCommand('dbml-previewer.preview', function () {
@@ -148,6 +172,128 @@ function activate(context) {
 		}
 	});
 	context.subscriptions.push(globalDbmlWatcher);
+
+	// Language features: autocompletion for data types, keywords, tables & columns.
+	registerDbmlCompletion(context);
+}
+
+// Common SQL/DBML data types offered as completions.
+const DBML_DATA_TYPES = [
+	'int', 'integer', 'tinyint', 'smallint', 'mediumint', 'bigint',
+	'decimal', 'numeric', 'float', 'double', 'real', 'bit',
+	'boolean', 'bool', 'serial', 'bigserial',
+	'char', 'varchar', 'nvarchar', 'text', 'tinytext', 'mediumtext', 'longtext',
+	'blob', 'bytea', 'binary', 'varbinary',
+	'date', 'datetime', 'timestamp', 'timestamptz', 'time', 'year',
+	'json', 'jsonb', 'uuid', 'money', 'geometry', 'point', 'inet',
+];
+
+// Top-level and setting keywords offered as completions.
+const DBML_KEYWORDS = [
+	'Table', 'TableGroup', 'Ref', 'Enum', 'Project', 'Note', 'indexes', 'as',
+	'pk', 'primary key', 'not null', 'unique', 'increment', 'default', 'note',
+	'headercolor', 'color',
+];
+
+/**
+ * Parse `Table name { ... }` blocks (brace-balanced so nested `indexes {}` /
+ * `Note {}` don't truncate the body) into { tableName: { columns: [...] } }.
+ * @param {string} text
+ * @returns {Object<string, { columns: string[] }>}
+ */
+function parseTablesForCompletion(text) {
+	const tables = {};
+	const headerRe = /\bTable\s+(?:"[^"]*"\.|[\w$]+\.)?"?([\w$]+)"?[^{]*\{/gi;
+	let m;
+	while ((m = headerRe.exec(text)) !== null) {
+		const name = m[1];
+		let depth = 1;
+		let i = headerRe.lastIndex;
+		const start = i;
+		while (i < text.length && depth > 0) {
+			const ch = text[i];
+			if (ch === '{') depth++;
+			else if (ch === '}') depth--;
+			i++;
+		}
+		const body = text.slice(start, i - 1);
+		const columns = [];
+		body.split(/\r?\n/).forEach(rawLine => {
+			const l = rawLine.trim();
+			if (!l || l.startsWith('//') || /^(Note|indexes)\b/i.test(l)) return;
+			const cm = l.match(/^"?([A-Za-z_$][\w$]*)"?\s+/);
+			if (cm) columns.push(cm[1]);
+		});
+		tables[name] = { columns };
+		headerRe.lastIndex = i;
+	}
+	return tables;
+}
+
+/**
+ * Register DBML autocompletion: table columns after `table.`, table names in
+ * relationship contexts, and data types / keywords otherwise.
+ * @param {vscode.ExtensionContext} context
+ */
+function registerDbmlCompletion(context) {
+	const provider = vscode.languages.registerCompletionItemProvider(
+		{ language: 'dbml' },
+		{
+			provideCompletionItems(document, position) {
+				const linePrefix = document.lineAt(position).text.slice(0, position.character);
+				const tables = parseTablesForCompletion(document.getText());
+
+				// 1) After `table.` -> that table's columns.
+				const dotMatch = linePrefix.match(/([A-Za-z_$][\w$]*)\.\s*$/);
+				if (dotMatch && tables[dotMatch[1]]) {
+					return tables[dotMatch[1]].columns.map(col => {
+						const item = new vscode.CompletionItem(col, vscode.CompletionItemKind.Field);
+						item.detail = `columna de ${dotMatch[1]}`;
+						return item;
+					});
+				}
+
+				// 2) Relationship context (`ref:` inline, a standalone `Ref`, or right
+				//    after a relationship operator) -> suggest table names.
+				const inRefContext =
+					/\bref\s*:/i.test(linePrefix) ||
+					/^\s*Ref\b/i.test(linePrefix) ||
+					/[<>-]\s*[\w$]*$/.test(linePrefix);
+				if (inRefContext) {
+					return Object.keys(tables).map(name => {
+						const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Class);
+						item.detail = 'tabla';
+						return item;
+					});
+				}
+
+				// 3) Otherwise offer data types, keywords and table names. When the line
+				//    looks like `columnName <partial>` (a type position), surface types first.
+				const items = [];
+				const atTypePosition =
+					/^\s*"?[A-Za-z_$][\w$]*"?\s+[\w$]*$/.test(linePrefix) &&
+					!/^\s*(Table|TableGroup|Ref|Enum|Project|Note|indexes)\b/i.test(linePrefix);
+
+				DBML_DATA_TYPES.forEach((t, idx) => {
+					const item = new vscode.CompletionItem(t, vscode.CompletionItemKind.TypeParameter);
+					item.detail = 'tipo de dato';
+					if (atTypePosition) item.sortText = `0${String(idx).padStart(3, '0')}`;
+					items.push(item);
+				});
+				DBML_KEYWORDS.forEach(k => {
+					items.push(new vscode.CompletionItem(k, vscode.CompletionItemKind.Keyword));
+				});
+				Object.keys(tables).forEach(name => {
+					const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Class);
+					item.detail = 'tabla';
+					items.push(item);
+				});
+				return items;
+			},
+		},
+		'.', '>', '<', '-', ':'
+	);
+	context.subscriptions.push(provider);
 }
 
 /**
@@ -229,6 +375,8 @@ function createPreviewPanel(context, filePath, content) {
 					const currentExportBackground = currentConfig.get('exportBackground', true);
 					const currentExportPadding = currentConfig.get('exportPadding', 20);
 					const currentShowCardinalityLabels = currentConfig.get('showCardinalityLabels', false);
+					const currentBackgroundVariant = currentConfig.get('backgroundVariant', 'dots');
+					const currentBackgroundGap = currentConfig.get('backgroundGap', 20);
 					panel.webview.postMessage({
 						type: 'configuration',
 						inheritThemeStyle: currentInheritThemeStyle,
@@ -236,7 +384,9 @@ function createPreviewPanel(context, filePath, content) {
 						showCardinalityLabels: currentShowCardinalityLabels,
 						exportQuality: currentExportQuality,
 						exportBackground: currentExportBackground,
-						exportPadding: currentExportPadding
+						exportPadding: currentExportPadding,
+						backgroundVariant: currentBackgroundVariant,
+						backgroundGap: currentBackgroundGap
 					});
 					break;
 				case 'saveLayout':
@@ -253,6 +403,33 @@ function createPreviewPanel(context, filePath, content) {
 					pendingPositions = null;
 					deleteLayoutFile(currentFilePath);
 					break;
+				case 'sourceEdit':
+					// Diagram-driven edit of the .dbml source (color/note/variables).
+					// Applied via a WorkspaceEdit so it is a single undoable change;
+					// the document is left dirty for the user to save. The preview is
+					// refreshed immediately from the new text.
+					(async () => {
+						try {
+							const uri = vscode.Uri.file(currentFilePath);
+							const doc = vscode.workspace.textDocuments.find(d => d.uri.fsPath === currentFilePath)
+								|| await vscode.workspace.openTextDocument(uri);
+							const oldText = doc.getText();
+							const newText = sourceEditor.applyOps(oldText, message.ops);
+							if (newText === oldText) return;
+							const edit = new vscode.WorkspaceEdit();
+							edit.replace(uri, new vscode.Range(doc.positionAt(0), doc.positionAt(oldText.length)), newText);
+							await vscode.workspace.applyEdit(edit);
+							pushUpdatedContent(newText);
+						} catch (err) {
+							console.error('sourceEdit failed:', err);
+							vscode.window.showErrorMessage('DBML Previewer: no se pudo aplicar el cambio — ' + err.message);
+						}
+					})();
+					break;
+				case 'revealTable':
+					// Double-click on a diagram table -> jump to its declaration.
+					revealTableInEditor(currentFilePath, message.name);
+					break;
 			}
 		},
 		undefined,
@@ -266,7 +443,9 @@ function createPreviewPanel(context, filePath, content) {
 		    event.affectsConfiguration('diagram.showCardinalityLabels') ||
 		    event.affectsConfiguration('diagram.exportQuality') ||
 		    event.affectsConfiguration('diagram.exportBackground') ||
-		    event.affectsConfiguration('diagram.exportPadding')) {
+		    event.affectsConfiguration('diagram.exportPadding') ||
+		    event.affectsConfiguration('diagram.backgroundVariant') ||
+		    event.affectsConfiguration('diagram.backgroundGap')) {
 			const config = vscode.workspace.getConfiguration('diagram');
 			const inheritThemeStyle = config.get('inheritThemeStyle', true);
 			const edgeType = config.get('edgeType', 'smoothstep');
@@ -281,22 +460,62 @@ function createPreviewPanel(context, filePath, content) {
 				showCardinalityLabels: showCardinalityLabels,
 				exportQuality: exportQuality,
 				exportBackground: exportBackground,
-				exportPadding: exportPadding
+				exportPadding: exportPadding,
+				backgroundVariant: config.get('backgroundVariant', 'dots'),
+				backgroundGap: config.get('backgroundGap', 20)
 			});
 		}
 	});
 
 	context.subscriptions.push(configChangeListener);
 
-	// Auto-refresh when file changes
-	const fileWatcher = vscode.workspace.createFileSystemWatcher(currentFilePath);
+	// Code -> diagram: when the caret sits on a `Table <name>` declaration line in
+	// this file, focus that table in the preview.
+	const selectionListener = vscode.window.onDidChangeTextEditorSelection(e => {
+		if (e.textEditor.document.uri.fsPath !== currentFilePath) return;
+		const lineText = e.textEditor.document.lineAt(e.selections[0].active.line).text;
+		const m = lineText.match(/^\s*Table\s+(?:"[^"]*"\.|[\w$]+\.)?"?([\w$]+)"?/i);
+		if (m) {
+			panel.webview.postMessage({ type: 'focusTable', name: m[1] });
+		}
+	});
+	context.subscriptions.push(selectionListener);
+
+	// Auto-refresh the preview when the .dbml source changes. Guard against
+	// re-sending identical content so overlapping triggers (an editor save also
+	// fires the file-system watcher) don't cause a double render.
+	let lastSentContent = null;
+	const pushUpdatedContent = (updatedContent) => {
+		if (updatedContent === lastSentContent) return;
+		lastSentContent = updatedContent;
+		panel.webview.postMessage({
+			type: 'updateContent',
+			content: updatedContent
+		});
+	};
+
+	// Primary trigger: the user saves the .dbml in the editor. Reliable on every
+	// platform (no glob/backslash pitfalls) and covers the common case.
+	const saveListener = vscode.workspace.onDidSaveTextDocument((doc) => {
+		if (doc.uri.fsPath === currentFilePath) {
+			pushUpdatedContent(doc.getText());
+		}
+	});
+	context.subscriptions.push(saveListener);
+
+	// Secondary trigger: the file changes on disk from outside the editor (git
+	// checkout, another tool). A RelativePattern is required so the watcher fires
+	// on Windows and for files outside the workspace — a raw absolute-path string
+	// used as a glob does not match (this was why saving didn't refresh before).
+	const fileWatcher = vscode.workspace.createFileSystemWatcher(
+		new vscode.RelativePattern(
+			vscode.Uri.file(path.dirname(currentFilePath)),
+			path.basename(currentFilePath)
+		)
+	);
 	fileWatcher.onDidChange(() => {
 		try {
-			const updatedContent = fs.readFileSync(currentFilePath, 'utf8');
-			panel.webview.postMessage({
-				type: 'updateContent',
-				content: updatedContent
-			});
+			pushUpdatedContent(fs.readFileSync(currentFilePath, 'utf8'));
 		} catch (error) {
 			console.error('Error auto-refreshing:', error);
 		}
@@ -315,6 +534,7 @@ function createPreviewPanel(context, filePath, content) {
 	// Clean up when panel is disposed
 	panel.onDidDispose(() => {
 		fileWatcher.dispose();
+		selectionListener.dispose();
 		clearTimeout(layoutSaveTimer);
 		if (pendingPositions) {
 			writeLayoutFile(currentFilePath, pendingPositions);
@@ -349,10 +569,16 @@ function getWebviewContent(content, fileName, filePath, webview, inheritThemeSty
 	const scriptPathOnDisk = vscode.Uri.file(path.join(__dirname, 'dist', 'webview.js'));
 	const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
 
+	// Explicit CSP so stricter webview hosts (e.g. VS Code forks like Windsurf)
+	// don't silently block the bundle. Allows the webview-served script/styles
+	// plus inline scripts/styles (React + style-loader inject those).
+	const cspSource = webview.cspSource;
+
 	return `<!DOCTYPE html>
 	<html lang="en">
 	<head>
 		<meta charset="UTF-8">
+		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data: blob:; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource} 'unsafe-inline'; font-src ${cspSource} data:;">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>DBML Preview - ${fileName}</title>
 		<style>
@@ -373,8 +599,18 @@ function getWebviewContent(content, fileName, filePath, webview, inheritThemeSty
 		</style>
 	</head>
 	<body>
-		<div id="root"></div>
+		<div id="root"><div style="padding:16px;font:14px sans-serif;color:#666;">Cargando webview…</div></div>
 		<script>
+			// Surface load/runtime failures on the page itself so a blank webview
+			// always shows a reason (useful on hosts that hide the webview console).
+			window.addEventListener('error', function (e) {
+				var r = document.getElementById('root');
+				if (r) {
+					r.innerHTML = '<pre style="color:#c0392b;white-space:pre-wrap;padding:16px;font:13px monospace;">'
+						+ 'Webview error: ' + ((e && e.message) || e)
+						+ (e && e.filename ? '\\n' + e.filename + ':' + (e.lineno || '') : '') + '</pre>';
+				}
+			});
 			window.initialContent = ${JSON.stringify(content)};
 			window.filePath = ${JSON.stringify(filePath)};
 			window.inheritThemeStyle = ${JSON.stringify(inheritThemeStyle)};
@@ -385,7 +621,7 @@ function getWebviewContent(content, fileName, filePath, webview, inheritThemeSty
 			window.exportPadding = ${JSON.stringify(exportPadding)};
 			window.initialLayout = ${JSON.stringify(initialLayout)};
 		</script>
-		<script src="${scriptUri}"></script>
+		<script src="${scriptUri}" onerror="document.getElementById('root').innerHTML='<pre style=&quot;color:#c0392b;padding:16px;font:13px monospace;&quot;>No se pudo cargar webview.js (bloqueado por CSP o no encontrado).</pre>'"></script>
 	</body>
 	</html>`;
 }

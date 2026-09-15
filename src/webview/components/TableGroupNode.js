@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { getThemeVar } from '../styles/themeManager.js';
 import { parseHeaderColor, getContrastColor } from '../utils/colorUtils.js';
+import { DiagramActionsContext } from '../diagramActionsContext.js';
+import { PaletteIcon, NoteIconButton, headerIconButtonStyle } from './HeaderIcons.js';
 
 const TableGroupNode = ({ data, selected }) => {
   const [isHovered, setIsHovered] = useState(false);
   const { tableGroup, tables } = data;
+  const { palette, openColorPicker, openNoteEditor } = useContext(DiagramActionsContext);
 
   if (!tableGroup) {
     return null;
@@ -16,6 +19,21 @@ const TableGroupNode = ({ data, selected }) => {
   const groupTextColor = customGroupColor
     ? getContrastColor(customGroupColor)
     : getThemeVar('buttonForeground');
+
+  const currentVar = (palette.find(
+    (p) => (p.hex || '').toLowerCase() === (tableGroup.color || '').toLowerCase()
+  ) || {}).name || null;
+
+  const handleOpenColor = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    openColorPicker({ kind: 'group', name: tableGroup.name, currentVar, position: { x: r.left, y: r.bottom + 6 } });
+  };
+  const handleOpenNote = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    openNoteEditor({ kind: 'group', name: tableGroup.name, currentNote: tableGroup.note || '', position: { x: r.left, y: r.bottom + 6 } });
+  };
 
   const groupStyle = {
     boxSizing: 'border-box',
@@ -31,7 +49,7 @@ const TableGroupNode = ({ data, selected }) => {
     borderRadius: '8px',
     zIndex: -1,
     transition: 'all 0.2s ease-in-out',
-    cursor: 'move',
+    cursor: 'default',
   };
 
   const titleStyle = {
@@ -49,6 +67,7 @@ const TableGroupNode = ({ data, selected }) => {
     borderRadius: '8px',
     border: 'none',
     width: '100%',
+    cursor: 'move',
   };
 
   const noteStyle = {
@@ -68,8 +87,21 @@ const TableGroupNode = ({ data, selected }) => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div style={titleStyle}>
-        {tableGroup.name}
+      <div style={titleStyle} className="dbml-group-drag">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tableGroup.name}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+            <NoteIconButton note={tableGroup.note} color={groupTextColor} onClick={handleOpenNote} />
+            <button
+              onClick={handleOpenColor}
+              className="nodrag"
+              style={headerIconButtonStyle(groupTextColor)}
+              title="Color del grupo"
+            >
+              <PaletteIcon />
+            </button>
+          </div>
+        </div>
         {tableGroup.note && (
           <div style={noteStyle}>
             {tableGroup.note}
