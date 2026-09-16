@@ -1,0 +1,20 @@
+/*
+ * Keep relationship edges strictly BELOW every table node, in all states —
+ * at rest, when an edge is selected, and while a table is being dragged.
+ *
+ * React Flow ships the edges and nodes containers with `position: absolute`
+ * and no z-index, so they don't isolate their contents: a single edge whose
+ * computed z-index is raised (e.g. an edge attached to a dragged/selected
+ * node) can paint on top of unrelated tables and their headers. Giving each
+ * container its own z-index turns it into a stacking context, so the whole
+ * edges layer always sits beneath the whole nodes layer regardless of any
+ * per-edge z-index. Per-node stacking (incl. bring-to-front on drag) still
+ * works within the nodes layer.
+ */
+.react-flow__edges {
+  z-index: 1;
+}
+
+.react-flow__nodes {
+  z-index: 2;
+}

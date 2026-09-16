@@ -11,6 +11,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import '../styles/overrides.css';
 import { toPng, toSvg } from 'html-to-image';
 import themeManager, { getThemeVar } from '../styles/themeManager.js';
 import { Parser } from '@dbml/core';
@@ -688,6 +689,13 @@ const DBMLPreview = ({ initialContent }) => {
   // Reset layout to auto-layout
   const resetLayout = useCallback(() => {
     if (fileId) {
+      // Guard the destructive reset behind a confirmation: it clears every saved
+      // table position. The host also writes a `.bak` copy before deleting so a
+      // stray click is recoverable.
+      const confirmed = typeof window.confirm !== 'function' || window.confirm(
+        'Restablecer el layout borrará las posiciones guardadas de todas las tablas.\n\nSe guardará una copia de respaldo (.bak) por si acaso. ¿Continuar?'
+      );
+      if (!confirmed) return;
       setSavedPositions({});
       saveLayout(fileId, {});
       window.vscode.postMessage({ type: 'clearLayout' });
@@ -1098,7 +1106,7 @@ const DBMLPreview = ({ initialContent }) => {
 
         const baseStroke = edge.data?.refColor ? darkenHexColor(edge.data.refColor) : getThemeVar('chartsLines');
         const expectedStroke = isSelected ? getThemeVar('focusBorder') : baseStroke;
-        const expectedStrokeWidth = isSelected ? 3 : 2;
+        const expectedStrokeWidth = isSelected ? 4 : 3;
         const expectedDashArray = isSelected ? '5 5' : '0';
         const expectedAnimated = isSelected;
         const expectedZIndex = isSelected ? 1001 : 0;

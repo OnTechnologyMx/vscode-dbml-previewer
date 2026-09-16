@@ -519,13 +519,13 @@ export const transformDBMLToNodes = (dbmlData, savedPositions = {}, onColumnClic
             // the child. See mapSourceAndTarget: source = many side.
             markerStart: {
               type: MarkerType.ArrowClosed,
-              width: 18,
-              height: 18,
+              width: 22,
+              height: 22,
               color: edgeStroke,
             },
             style: {
               stroke: edgeStroke,
-              strokeWidth: 2,
+              strokeWidth: 3,
               strokeDasharray: '0',
             },
             data: {
