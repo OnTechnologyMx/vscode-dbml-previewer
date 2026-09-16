@@ -423,6 +423,20 @@ const DBMLPreview = ({ initialContent }) => {
     // No-op: Manual connections disabled in preview mode
   }, []);
 
+  // In manual z-index mode React Flow no longer auto-elevates a selected node,
+  // so bring the table being dragged to the front by hand (its columns inherit
+  // parentZ + 1, and its edges stay pinned to the base layer below every table).
+  // Reset to the resting z on drop.
+  const onNodeDragStart = useCallback((event, node) => {
+    if (node.type !== 'tableHeader') return;
+    setNodes(nds => nds.map(n => (n.id === node.id ? { ...n, zIndex: 900 } : n)));
+  }, [setNodes]);
+
+  const onNodeDragStop = useCallback((event, node) => {
+    if (node.type !== 'tableHeader') return;
+    setNodes(nds => nds.map(n => (n.id === node.id ? { ...n, zIndex: 10 } : n)));
+  }, [setNodes]);
+
   // Handle column click for tooltip display.
   // Defined before onNodeClick (which lists it as a dependency) so the const is
   // initialized first — otherwise reading it in onNodeClick's deps array throws
@@ -1198,6 +1212,8 @@ const DBMLPreview = ({ initialContent }) => {
         onNodeDoubleClick={handleNodeDoubleClick}
         onNodeMouseEnter={handleNodeMouseEnter}
         onNodeMouseLeave={handleNodeMouseLeave}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -1205,6 +1221,7 @@ const DBMLPreview = ({ initialContent }) => {
         attributionPosition="bottom-left"
         nodesConnectable={false}
         nodesDraggable={true}
+        zIndexMode="manual"
         minZoom={0.05}
         maxZoom={2}
       >

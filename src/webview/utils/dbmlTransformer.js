@@ -751,9 +751,13 @@ const getLayoutedElements = (nodes, edges, tableGroups = [], savedPositions = {}
         const tableGroupNode = {
           id: `tablegroup-${group.fullName}`,
           type: 'tableGroup',
-          position: { 
-            x: minX - padding, 
-            y: minY - padding 
+          // In manual z-index mode this node-level zIndex keeps the group box
+          // behind the relationship edges and every table (edges sit at 0,
+          // table headers at 10, their columns at 11).
+          zIndex: -1,
+          position: {
+            x: minX - padding,
+            y: minY - padding
           },
           data: {
             tableGroup: group,

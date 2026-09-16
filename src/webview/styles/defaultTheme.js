@@ -3,7 +3,7 @@
 
 export const defaultTheme = {
   // Background colors
-  background: '#ffffff',
+  background: '#1e1d1d',
   panelBackground: '#f8f9fa',
   editorBackground: '#ffffff',
 

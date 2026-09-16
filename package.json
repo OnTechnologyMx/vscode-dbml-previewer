@@ -212,7 +212,7 @@
           "type": "number",
           "default": 0.95,
           "minimum": 0.1,
-          "maximum": 1.0,
+          "maximum": 1,
           "description": "Image quality for PNG exports (0.1 to 1.0). Higher values produce better quality but larger file sizes."
         },
         "diagram.exportBackground": {
@@ -271,29 +271,29 @@
     "publish:ovsx": "ovsx publish"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "@dbml/core": "^3.2.0",
     "@xyflow/react": "^12.0.0",
     "dagre": "^0.8.5",
-    "@dbml/core": "^3.2.0",
-    "html-to-image": "1.11.11"
+    "html-to-image": "1.11.11",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@types/vscode": "^1.102.0",
+    "@babel/core": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "@babel/preset-react": "^7.26.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "eslint": "^10.8.0",
+    "@types/vscode": "^1.102.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^2.5.2",
-    "webpack": "^5.105.0",
-    "webpack-cli": "^5.1.0",
-    "@babel/core": "^8.0.1",
-    "@babel/preset-env": "^8.0.2",
-    "@babel/preset-react": "^8.0.1",
-    "babel-loader": "^10.1.1",
+    "babel-loader": "^9.2.1",
     "css-loader": "^6.8.0",
-    "style-loader": "^3.3.0"
+    "eslint": "^10.8.0",
+    "style-loader": "^3.3.0",
+    "webpack": "^5.105.0",
+    "webpack-cli": "^5.1.0"
   }
 }
